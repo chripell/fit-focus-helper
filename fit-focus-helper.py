@@ -30,8 +30,8 @@ class Image:
             self.height = self.data.shape[0]
             self.width = self.data.shape[1]
         except Exception as e:
-            self.parent.set_status(
-                "Cannot load %s: %s", self.filename, str(e))
+            msg = "Cannot load %s: %s" % (self.filename, str(e))
+            GLib.idle_add(self.parent.set_status, msg)
             return False
         self.black = np.iinfo(self.data.dtype).min
         self.white = np.iinfo(self.data.dtype).max
@@ -57,8 +57,9 @@ class Image:
                      0.587 * self.cdata[:, :, 1] +
                      0.114 * self.cdata[:, :, 0])
 
-    def gtk_display(self, pixbuf: GdkPixbuf.Pixbuf):
+    def gtk_display(self, pixbuf: GdkPixbuf.Pixbuf, msg: str):
         self.widget.set_from_pixbuf(pixbuf)
+        self.parent.set_status(msg)
 
     def thread_display(self, param: Dict[str, Any], op: str):
         if self.data is None and self.cdata is None:
@@ -97,9 +98,12 @@ class Image:
         pixbuf = GdkPixbuf.Pixbuf.new_from_data(
             img, GdkPixbuf.Colorspace.RGB, False, 8,
             width, height, 3 * width)
-        GLib.idle_add(self.gtk_display, pixbuf)
+        GLib.idle_add(self.gtk_display, pixbuf,
+                      "Loaded %s" % self.filename)
 
     def display(self, param: Dict[str, Any], op: str):
+        self.parent.set_status(
+            "Loading %s" % self.filename)
         thread = threading.Thread(
             target=lambda: self.thread_display(param, op))
         thread.daemon = True
