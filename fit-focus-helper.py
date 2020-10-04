@@ -4,6 +4,7 @@ import gi
 import numpy as np
 import cv2
 import threading
+import os
 from astropy.io import fits
 from optparse import OptionParser
 from typing import Dict, Any
@@ -23,6 +24,10 @@ class Image:
         self.cdata = None
         self.percentiles = {}
 
+    def report_error(self, msg: str):
+        self.parent.set_status(msg)
+        self.parent.broken(self.filename)
+
     def load(self) -> bool:
         try:
             hdul = fits.open(self.filename)
@@ -32,7 +37,7 @@ class Image:
             self.width = self.data.shape[1]
         except Exception as e:
             msg = "Cannot load %s: %s" % (self.filename, str(e))
-            GLib.idle_add(self.parent.set_status, msg)
+            GLib.idle_add(self.report_error, msg)
             return False
         self.black = np.iinfo(self.data.dtype).min
         self.white = np.iinfo(self.data.dtype).max
@@ -266,21 +271,32 @@ class FocuserApp(Gtk.Window):
         parser = OptionParser(usage="usage: %prog [opts]")
         parser.add_option("--image", type="string", default="",
                           help="Open a single image")
+        parser.add_option("--dir", type="string", default="",
+                          help="Open a directory")
         (self.options, self.args) = parser.parse_args()
+        self.img = None
+        self.dir = None
+        self.current = None
+        self.fit_files = None
         self.param = {
             "display/scale": True,
             "display/invert": False,
             "display/histogram_stretch_percent": 0,
             "display/gamma_stretch": 0,
             "display/force_gray": False,
+            "multi/sort_timestamp": False,
         }
 
     def run(self):
         if self.options.image != "":
             GLib.timeout_add(500, self.single_image, self.options.image)
+        elif self.options.dir != "":
+            GLib.timeout_add(500, self.multi_image, self.options.dir)
 
     def set_status(self, msg: str):
         self.status.remove_all(self.status_id)
+        if self.current is not None:
+            msg = "(%d/%d) %s" % (self.current + 1, len(self.fit_files), msg)
         self.status.push(self.status_id, msg)
 
     def setup(self):
@@ -302,14 +318,47 @@ class FocuserApp(Gtk.Window):
         self.show_all()
 
     def single_image(self, filename: str):
+        self.dir = None
+        self.current = None
         self.img = Image(filename, self)
         self.img.display(self.param, "new")
+
+    def show_last(self):
+        ll = len(self.fit_files)
+        if ll > 0:
+            self.current = ll - 1
+            self.img = Image(self.fit_files[self.current][0], self)
+            self.img.display(self.param, "new")
+
+    def multi_image(self, dire: str):
+        fit_files = [os.path.join(dire, f) for f in os.listdir(dire) if (
+            os.path.isfile(os.path.join(dire, f)) and
+            os.path.splitext(f)[1].lower() == ".fit")]
+        fit_files = [(f, os.path.getmtime(f)) for f in fit_files]
+        key = 0
+        if self.param["multi/sort_timestamp"]:
+            key = 1
+        fit_files.sort(key=lambda x: x[key])
+        if self.fit_files == fit_files:
+            return
+        self.fit_files = fit_files
+        self.dir = dire
+        self.show_last()
 
     def set_param(self, par: str, val):
         if self.img is None:
             return
         self.param[par] = val
         self.img.display(self.param, par)
+
+    def broken(self, filename: str):
+        if self.fit_files is None:
+            return
+        for (i, el) in self.fit_files:
+            if el[1] == filename:
+                del self.fit_files[i]
+                break
+        self.show_last()
 
 
 if __name__ == "__main__":
