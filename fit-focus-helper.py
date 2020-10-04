@@ -21,6 +21,7 @@ class Image:
         self.parent = parent
         self.data = None
         self.cdata = None
+        self.percentiles = {}
 
     def load(self) -> bool:
         try:
@@ -61,6 +62,27 @@ class Image:
         self.widget.set_from_pixbuf(pixbuf)
         self.parent.set_status(msg)
 
+    def histogram_stretch(
+            self, img: np.ndarray, percent: int) -> (float, float):
+        try:
+            return self.percentiles[percent]
+        except KeyError:
+            if self.data is None:
+                self.make_gray()
+            want = [0.05, 0.5, 2.5, 5.0, 95.0, 97.5, 99.5, 99.95]
+            p = np.percentile(self.data, want)
+            self.percentiles = {
+                1: (p[0], p[len(want) - 1]),
+                10: (p[1], p[len(want) - 2]),
+                50: (p[2], p[len(want) - 3]),
+                100: (p[3], p[len(want) - 4]),
+            }
+        return self.percentiles[percent]
+
+    def gamma_stretch(
+            self, img: np.ndarray, gamma: float) -> np.ndarray:
+        return img ** gamma
+
     def thread_display(self, param: Dict[str, Any], op: str):
         if self.data is None and self.cdata is None:
             if not self.load():
@@ -90,7 +112,19 @@ class Image:
             else:
                 interpol = cv2.INTER_LINEAR
             img = cv2.resize(img, (width, height), interpolation=interpol)
-        img = img / (self.white / 255)
+        cmin = self.black
+        cmax = self.white
+        if param["display/histogram_stretch_percent"] > 0:
+            (cmin, cmax) = self.histogram_stretch(
+                img, param["display/histogram_stretch_percent"])
+        gamma = param["display/gamma_stretch"]
+        if gamma > 0:
+            img = self.gamma_stretch(img, gamma)
+            cmin = cmin ** gamma
+            cmax = cmax ** gamma
+        print("DELME ", cmin, cmax)
+        img = np.clip((img - cmin) / ((cmax - cmin) / 255.0), 0, 255)
+        print("DELME ", img.min(), img.max())
         img = img.astype(np.uint8)
         if is_gray:
             img = np.repeat(img, 3)
@@ -102,6 +136,7 @@ class Image:
                       "Loaded %s" % self.filename)
 
     def display(self, param: Dict[str, Any], op: str):
+        print("DELME ", op)
         self.parent.set_status(
             "Loading %s" % self.filename)
         thread = threading.Thread(
@@ -167,6 +202,9 @@ class FocuserCmd(Gtk.MenuBar):
             view_menu, 'histogram_stretch', "No histogram stretch",
             self.histo_0, True)
         self.add_radio(
+            view_menu, 'histogram_stretch', "Histogram stretch 0.1%",
+            self.histo_01, False)
+        self.add_radio(
             view_menu, 'histogram_stretch', "Histogram stretch 1%",
             self.histo_1, False)
         self.add_radio(
@@ -186,22 +224,45 @@ class FocuserCmd(Gtk.MenuBar):
         Gtk.main_quit()
 
     def force_gray(self, w):
-        pass
+        self.p.param["display/force_gray"] = w.get_active()
+        self.p.img.display(self.p.param, "display/force_gray")
 
     def gamma_stretch(self, w):
-        pass
+        if w.get_active():
+            self.p.param["display/gamma_stretch"] = 1.0 / 2.2
+        else:
+            self.p.param["display/gamma_stretch"] = 0
+        self.p.img.display(self.p.param, "display/gamma_stretch")
 
     def histo_0(self, w):
-        pass
+        if not w.get_active():
+            return
+        self.p.param["display/histogram_stretch_percent"] = 0
+        self.p.img.display(self.p.param, "display/histogram_stretch_percent")
+
+    def histo_01(self, w):
+        if not w.get_active():
+            return
+        self.p.param["display/histogram_stretch_percent"] = 1
+        self.p.img.display(self.p.param, "display/histogram_stretch_percent")
 
     def histo_1(self, w):
-        pass
+        if not w.get_active():
+            return
+        self.p.param["display/histogram_stretch_percent"] = 10
+        self.p.img.display(self.p.param, "display/histogram_stretch_percent")
 
     def histo_5(self, w):
-        pass
+        if not w.get_active():
+            return
+        self.p.param["display/histogram_stretch_percent"] = 50
+        self.p.img.display(self.p.param, "display/histogram_stretch_percent")
 
     def histo_10(self, w):
-        pass
+        if not w.get_active():
+            return
+        self.p.param["display/histogram_stretch_percent"] = 100
+        self.p.img.display(self.p.param, "display/histogram_stretch_percent")
 
     def scale(self, w):
         self.p.param["display/scale"] = w.get_active()
@@ -219,7 +280,7 @@ class FocuserApp(Gtk.Window):
             "display/scale": True,
             "display/invert": False,
             "display/histogram_stretch_percent": 0,
-            "display/gamma_stretch": False,
+            "display/gamma_stretch": 0,
             "display/force_gray": False,
         }
 
