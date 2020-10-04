@@ -225,53 +225,39 @@ class FocuserCmd(Gtk.MenuBar):
         Gtk.main_quit()
 
     def force_gray(self, w):
-        self.p.param["display/force_gray"] = w.get_active()
-        self.p.img.display(self.p.param, "display/force_gray")
+        self.p.set_param("display/force_gray", w.get_active())
 
     def invert(self, w):
-        self.p.param["display/invert"] = w.get_active()
-        self.p.img.display(self.p.param, "display/invert")
+        self.p.set_param("display/invert", w.get_active())
 
     def gamma_stretch(self, w):
         if w.get_active():
-            self.p.param["display/gamma_stretch"] = 1.0 / 2.2
+            self.p.set_param("display/gamma_stretch", 1.0 / 2.2)
         else:
-            self.p.param["display/gamma_stretch"] = 0
-        self.p.img.display(self.p.param, "display/gamma_stretch")
+            self.p.set_param("display/gamma_stretch", 0)
 
     def histo_0(self, w):
-        if not w.get_active():
-            return
-        self.p.param["display/histogram_stretch_percent"] = 0
-        self.p.img.display(self.p.param, "display/histogram_stretch_percent")
+        if w.get_active():
+            self.p.set_param("display/histogram_stretch_percent", 0)
 
     def histo_01(self, w):
-        if not w.get_active():
-            return
-        self.p.param["display/histogram_stretch_percent"] = 1
-        self.p.img.display(self.p.param, "display/histogram_stretch_percent")
+        if w.get_active():
+            self.p.set_param("display/histogram_stretch_percent", 1)
 
     def histo_1(self, w):
-        if not w.get_active():
-            return
-        self.p.param["display/histogram_stretch_percent"] = 10
-        self.p.img.display(self.p.param, "display/histogram_stretch_percent")
+        if w.get_active():
+            self.p.set_param("display/histogram_stretch_percent", 10)
 
     def histo_5(self, w):
-        if not w.get_active():
-            return
-        self.p.param["display/histogram_stretch_percent"] = 50
-        self.p.img.display(self.p.param, "display/histogram_stretch_percent")
+        if w.get_active():
+            self.p.set_param("display/histogram_stretch_percent", 50)
 
     def histo_10(self, w):
-        if not w.get_active():
-            return
-        self.p.param["display/histogram_stretch_percent"] = 100
-        self.p.img.display(self.p.param, "display/histogram_stretch_percent")
+        if w.get_active():
+            self.p.set_param("display/histogram_stretch_percent", 100)
 
     def scale(self, w):
-        self.p.param["display/scale"] = w.get_active()
-        self.p.img.display(self.p.param, "display/scale")
+        self.p.set_param("display/scale", w.get_active())
 
 
 class FocuserApp(Gtk.Window):
@@ -318,6 +304,12 @@ class FocuserApp(Gtk.Window):
     def single_image(self, filename: str):
         self.img = Image(filename, self)
         self.img.display(self.param, "new")
+
+    def set_param(self, par: str, val):
+        if self.img is None:
+            return
+        self.param[par] = val
+        self.img.display(self.param, par)
 
 
 if __name__ == "__main__":
