@@ -122,10 +122,10 @@ class Image:
             img = self.gamma_stretch(img, gamma)
             cmin = cmin ** gamma
             cmax = cmax ** gamma
-        print("DELME ", cmin, cmax)
         img = np.clip((img - cmin) / ((cmax - cmin) / 255.0), 0, 255)
-        print("DELME ", img.min(), img.max())
         img = img.astype(np.uint8)
+        if param["display/invert"]:
+            img = 255 - img
         if is_gray:
             img = np.repeat(img, 3)
         img = img.ravel()
@@ -136,7 +136,6 @@ class Image:
                       "Loaded %s" % self.filename)
 
     def display(self, param: Dict[str, Any], op: str):
-        print("DELME ", op)
         self.parent.set_status(
             "Loading %s" % self.filename)
         thread = threading.Thread(
@@ -197,6 +196,8 @@ class FocuserCmd(Gtk.MenuBar):
             view_menu, "Gamma Stretch", self.gamma_stretch)
         self.add_check(
             view_menu, "Zoom to fit", self.scale, True)
+        self.add_check(
+            view_menu, "Invert", self.invert, False)
         self.add_separator(view_menu)
         self.add_radio(
             view_menu, 'histogram_stretch', "No histogram stretch",
@@ -226,6 +227,10 @@ class FocuserCmd(Gtk.MenuBar):
     def force_gray(self, w):
         self.p.param["display/force_gray"] = w.get_active()
         self.p.img.display(self.p.param, "display/force_gray")
+
+    def invert(self, w):
+        self.p.param["display/invert"] = w.get_active()
+        self.p.img.display(self.p.param, "display/invert")
 
     def gamma_stretch(self, w):
         if w.get_active():
