@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import gi
 import numpy as np
 import cv2
 import threading
@@ -8,6 +7,7 @@ import os
 from astropy.io import fits
 from optparse import OptionParser
 from typing import Dict, Any
+import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GdkPixbuf, GLib  # nopep8
 
@@ -219,6 +219,17 @@ class FocuserCmd(Gtk.MenuBar):
         self.add_radio(
             view_menu, 'histogram_stretch', "Histogram stretch 10%",
             self.histo_10, False)
+        nav_menu = self.add_sub_menu("_Navigate")
+        self.add_entry(
+            nav_menu, "Reload List", self.multi_reload)
+        self.add_entry(
+            nav_menu, "First Image", self.first_img)
+        self.add_entry(
+            nav_menu, "Previous Image", self.prev_img)
+        self.add_entry(
+            nav_menu, "Next Image", self.next_img)
+        self.add_entry(
+            nav_menu, "Last Image", self.last_img)
 
     def open_picture(self, w):
         self.p.single_image("/mnt/scratch/astrop/20200919/linux/2020-09-17_03_20_21Z/2020-09-17-0320_3-CapObj_0006.FIT")
@@ -264,8 +275,28 @@ class FocuserCmd(Gtk.MenuBar):
     def scale(self, w):
         self.p.set_param("display/scale", w.get_active())
 
+    def first_img(self, w):
+        self.p.show_img(FocuserApp.IMG_FIRST)
+
+    def last_img(self, w):
+        self.p.show_img(FocuserApp.IMG_LAST)
+
+    def next_img(self, w):
+        self.p.show_img(FocuserApp.IMG_NEXT)
+
+    def prev_img(self, w):
+        self.p.show_img(FocuserApp.IMG_PREV)
+
+    def multi_reload(self, w):
+        self.p.multi_reload()
+
 
 class FocuserApp(Gtk.Window):
+
+    IMG_FIRST = 0
+    IMG_LAST = -1
+    IMG_NEXT = -2
+    IMG_PREV = -3
 
     def __init__(self):
         parser = OptionParser(usage="usage: %prog [opts]")
@@ -275,7 +306,7 @@ class FocuserApp(Gtk.Window):
                           help="Open a directory")
         (self.options, self.args) = parser.parse_args()
         self.img = None
-        self.dir = None
+        self.dire = None
         self.current = None
         self.fit_files = None
         self.param = {
@@ -318,17 +349,32 @@ class FocuserApp(Gtk.Window):
         self.show_all()
 
     def single_image(self, filename: str):
-        self.dir = None
+        self.dire = None
         self.current = None
         self.img = Image(filename, self)
         self.img.display(self.param, "new")
 
-    def show_last(self):
+    def show_img(self, what: int):
+        if self.fit_files is None:
+            return
         ll = len(self.fit_files)
-        if ll > 0:
-            self.current = ll - 1
-            self.img = Image(self.fit_files[self.current][0], self)
-            self.img.display(self.param, "new")
+        if ll == 0:
+            return
+        if what == self.IMG_LAST:
+            what = ll - 1
+        elif what == self.IMG_NEXT and self.current is not None:
+            what = self.current + 1
+        elif what == self.IMG_PREV and self.current is not None:
+            what = self.current - 1
+        if what >= ll:
+            what = ll - 1
+        if what < 0:
+            what = 0
+        if what == self.current:
+            return
+        self.current = what
+        self.img = Image(self.fit_files[self.current][0], self)
+        self.img.display(self.param, "new")
 
     def multi_image(self, dire: str):
         fit_files = [os.path.join(dire, f) for f in os.listdir(dire) if (
@@ -342,8 +388,13 @@ class FocuserApp(Gtk.Window):
         if self.fit_files == fit_files:
             return
         self.fit_files = fit_files
-        self.dir = dire
-        self.show_last()
+        self.dire = dire
+        self.show_img(self.IMG_LAST)
+
+    def multi_reload(self):
+        if self.dire is None:
+            return
+        self.multi_image(self.dire)
 
     def set_param(self, par: str, val):
         if self.img is None:
@@ -358,7 +409,7 @@ class FocuserApp(Gtk.Window):
             if el[1] == filename:
                 del self.fit_files[i]
                 break
-        self.show_last()
+        self.show_img(self.IMG_LAST)
 
 
 if __name__ == "__main__":
