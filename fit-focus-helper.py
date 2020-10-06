@@ -6,7 +6,7 @@ import threading
 import os
 from astropy.io import fits
 from optparse import OptionParser
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GdkPixbuf, GLib  # nopep8
@@ -22,7 +22,7 @@ class Image:
         self.parent = parent
         self.data = None
         self.cdata = None
-        self.percentiles = {}
+        self.percentiles: Dict[int, Tuple[float, float]] = {}
 
     def report_error(self, msg: str):
         self.parent.set_status(msg)
@@ -68,7 +68,7 @@ class Image:
         self.parent.set_status(msg)
 
     def histogram_stretch(
-            self, img: np.ndarray, percent: int) -> (float, float):
+            self, img: np.ndarray, percent: int) -> Tuple[float, float]:
         try:
             return self.percentiles[percent]
         except KeyError:
@@ -230,12 +230,45 @@ class FocuserCmd(Gtk.MenuBar):
             nav_menu, "Next Image", self.next_img)
         self.add_entry(
             nav_menu, "Last Image", self.last_img)
+        self.add_check(
+            nav_menu, "Sort by date", self.sort_by_date, False)
 
     def open_picture(self, w):
-        self.p.single_image("/mnt/scratch/astrop/20200919/linux/2020-09-17_03_20_21Z/2020-09-17-0320_3-CapObj_0006.FIT")
+        dialog = Gtk.FileChooserDialog(
+            title="Please choose a Fit image",
+            parent=self.p, action=Gtk.FileChooserAction.OPEN
+        )
+        dialog.add_buttons(
+            Gtk.STOCK_CANCEL,
+            Gtk.ResponseType.CANCEL,
+            Gtk.STOCK_OPEN,
+            Gtk.ResponseType.OK,
+        )
+        filter_fit = Gtk.FileFilter()
+        filter_fit.set_name("Fit images")
+        filter_fit.add_pattern("*.fit")
+        filter_fit.add_pattern("*.FIT")
+        dialog.add_filter(filter_fit)
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            self.p.single_image(dialog.get_filename())
+        dialog.destroy()
 
     def open_directory(self, w):
-        pass
+        dialog = Gtk.FileChooserDialog(
+            title="Please choose a directory with fit images",
+            parent=self.p, action=Gtk.FileChooserAction.SELECT_FOLDER
+        )
+        dialog.add_buttons(
+            Gtk.STOCK_CANCEL,
+            Gtk.ResponseType.CANCEL,
+            Gtk.STOCK_OPEN,
+            Gtk.ResponseType.OK,
+        )
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            self.p.multi_image(dialog.get_filename())
+        dialog.destroy()
 
     def exit_app(self, w):
         Gtk.main_quit()
@@ -288,6 +321,10 @@ class FocuserCmd(Gtk.MenuBar):
         self.p.show_img(FocuserApp.IMG_PREV)
 
     def multi_reload(self, w):
+        self.p.multi_reload()
+
+    def sort_by_date(self, w):
+        self.p.set_param("multi/sort_timestamp", w.get_active())
         self.p.multi_reload()
 
 
@@ -351,6 +388,7 @@ class FocuserApp(Gtk.Window):
     def single_image(self, filename: str):
         self.dire = None
         self.current = None
+        self.fit_files = None
         self.img = Image(filename, self)
         self.img.display(self.param, "new")
 
@@ -377,10 +415,10 @@ class FocuserApp(Gtk.Window):
         self.img.display(self.param, "new")
 
     def multi_image(self, dire: str):
-        fit_files = [os.path.join(dire, f) for f in os.listdir(dire) if (
+        fit_files1 = [os.path.join(dire, f) for f in os.listdir(dire) if (
             os.path.isfile(os.path.join(dire, f)) and
             os.path.splitext(f)[1].lower() == ".fit")]
-        fit_files = [(f, os.path.getmtime(f)) for f in fit_files]
+        fit_files = [(f, os.path.getmtime(f)) for f in fit_files1]
         key = 0
         if self.param["multi/sort_timestamp"]:
             key = 1
