@@ -9,7 +9,7 @@ from optparse import OptionParser
 from typing import Dict, Any, Tuple
 import gi
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, GdkPixbuf, GLib  # nopep8
+from gi.repository import Gtk, GdkPixbuf, GLib, Gdk  # nopep8
 
 
 class Image:
@@ -185,6 +185,7 @@ class FocuserCmd(Gtk.MenuBar):
     def __init__(self, parent):
         self.p = parent
         Gtk.MenuBar.__init__(self)
+        accel = Gtk.AccelGroup()
         self._groups = {}
         file_menu = self.add_sub_menu("_File")
         self.add_entry(
@@ -224,14 +225,29 @@ class FocuserCmd(Gtk.MenuBar):
             nav_menu, "Reload List", self.multi_reload)
         self.add_entry(
             nav_menu, "First Image", self.first_img)
+        accel.connect(
+            Gdk.keyval_from_name('Home'), 0, 0,
+            lambda ac, at, kv, mod: self.first_img(None))
         self.add_entry(
             nav_menu, "Previous Image", self.prev_img)
+        accel.connect(
+            Gdk.keyval_from_name('Page_Up'), 0, 0,
+            lambda ac, at, kv, mod: self.prev_img(None))
         self.add_entry(
             nav_menu, "Next Image", self.next_img)
+        accel.connect(
+            Gdk.keyval_from_name('Page_Down'), 0, 0,
+            lambda ac, at, kv, mod: self.next_img(None))
         self.add_entry(
             nav_menu, "Last Image", self.last_img)
+        accel.connect(
+            Gdk.keyval_from_name('End'), 0, 0,
+            lambda ac, at, kv, mod: self.last_img(None))
         self.add_check(
             nav_menu, "Sort by date", self.sort_by_date, False)
+        self.add_check(
+            nav_menu, "Auto reload new pictures", self.auto_reload, False)
+        self.p.add_accel_group(accel)
 
     def open_picture(self, w):
         dialog = Gtk.FileChooserDialog(
@@ -327,6 +343,9 @@ class FocuserCmd(Gtk.MenuBar):
         self.p.set_param("multi/sort_timestamp", w.get_active())
         self.p.multi_reload()
 
+    def auto_reload(self, w):
+        self.p.auto_reload(w.get_active())
+
 
 class FocuserApp(Gtk.Window):
 
@@ -346,6 +365,8 @@ class FocuserApp(Gtk.Window):
         self.dire = None
         self.current = None
         self.fit_files = None
+        self.do_reload = False
+        self.timer = None
         self.param = {
             "display/scale": True,
             "display/invert": False,
@@ -448,6 +469,21 @@ class FocuserApp(Gtk.Window):
                 del self.fit_files[i]
                 break
         self.show_img(self.IMG_LAST)
+
+    def auto_reload(self, state):
+        self.do_reload = state
+        if not state:
+            if self.timer is not None:
+                GLib.source_remove(self.timer)
+                self.timer = None
+            return
+        self.timer = GLib.timeout_add_seconds(5, self.timer_tick)
+
+    def timer_tick(self):
+        if self.do_reload is None:
+            return False
+        self.multi_reload()
+        return True
 
 
 if __name__ == "__main__":
