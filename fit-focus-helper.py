@@ -63,7 +63,9 @@ class Image:
                      0.587 * self.cdata[:, :, 1] +
                      0.114 * self.cdata[:, :, 0])
 
-    def gtk_display(self, pixbuf: GdkPixbuf.Pixbuf, msg: str):
+    def gtk_display(self, pixbuf: GdkPixbuf.Pixbuf, msg: str, gen: int):
+        if self.parent.generation != gen:
+            return
         self.widget.set_from_pixbuf(pixbuf)
         self.parent.set_status(msg)
 
@@ -88,10 +90,14 @@ class Image:
             self, img: np.ndarray, gamma: float) -> np.ndarray:
         return img ** gamma
 
-    def thread_display(self, param: Dict[str, Any], op: str):
+    def thread_display(self, param: Dict[str, Any], op: str, gen: int):
+        if self.parent.generation != gen:
+            return
         if self.data is None and self.cdata is None:
             if not self.load():
                 return
+        if self.parent.generation != gen:
+            return
         if param["display/force_gray"] and self.data is None:
             self.make_gray()
         is_gray = self.cdata is None or param["display/force_gray"]
@@ -102,6 +108,8 @@ class Image:
         scale = 1
         width = self.width
         height = self.height
+        if self.parent.generation != gen:
+            return
         if param["display/scale"]:
             box = self.box.get_allocation()
             scale_w = width / box.width
@@ -117,12 +125,16 @@ class Image:
             else:
                 interpol = cv2.INTER_LINEAR
             img = cv2.resize(img, (width, height), interpolation=interpol)
+        if self.parent.generation != gen:
+            return
         cmin = self.black
         cmax = self.white
         if param["display/histogram_stretch_percent"] > 0:
             (cmin, cmax) = self.histogram_stretch(
                 img, param["display/histogram_stretch_percent"])
         gamma = param["display/gamma_stretch"]
+        if self.parent.generation != gen:
+            return
         if gamma > 0:
             img = self.gamma_stretch(img, gamma)
             cmin = cmin ** gamma
@@ -131,20 +143,27 @@ class Image:
         img = img.astype(np.uint8)
         if param["display/invert"]:
             img = 255 - img
+        if self.parent.generation != gen:
+            return
         if is_gray:
             img = np.repeat(img, 3)
         img = img.ravel()
+        if self.parent.generation != gen:
+            return
         pixbuf = GdkPixbuf.Pixbuf.new_from_data(
             img, GdkPixbuf.Colorspace.RGB, False, 8,
             width, height, 3 * width)
+        if self.parent.generation != gen:
+            return
         GLib.idle_add(self.gtk_display, pixbuf,
-                      "Loaded %s" % self.filename)
+                      "Loaded %s" % self.filename, gen)
 
     def display(self, param: Dict[str, Any], op: str):
         self.parent.set_status(
             "Loading %s" % self.filename)
+        self.parent.generation = self.parent.generation + 1
         thread = threading.Thread(
-            target=lambda: self.thread_display(param, op))
+            target=lambda: self.thread_display(param, op, self.parent.generation))
         thread.daemon = True
         thread.start()
 
@@ -367,6 +386,7 @@ class FocuserApp(Gtk.Window):
         self.fit_files = None
         self.do_reload = False
         self.timer = None
+        self.generation = 0
         self.param = {
             "display/scale": True,
             "display/invert": False,
