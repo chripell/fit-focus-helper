@@ -7,6 +7,7 @@ import os
 from astropy.io import fits
 from optparse import OptionParser
 from typing import Dict, Any, Tuple
+import cairo
 import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GdkPixbuf, GLib, Gdk  # nopep8
@@ -54,19 +55,17 @@ class Image:
             pass
         if self.bayer == "GRBG":
             # TODO: other bayer
-            self.cdata = cv2.cvtColor(self.data, cv2.COLOR_BAYER_GR2RGB)
+            self.cdata = cv2.cvtColor(self.data, cv2.COLOR_BAYER_GR2RGBA)
             self.data = None
         return True
 
     def make_gray(self):
-        self.data = (0.299 * self.cdata[:, :, 2] +
-                     0.587 * self.cdata[:, :, 1] +
-                     0.114 * self.cdata[:, :, 0])
+        self.data = cv2.cvtColor(self.cdata, cv2.COLOR_RGBA2GRAY)
 
-    def gtk_display(self, pixbuf: GdkPixbuf.Pixbuf, msg: str, gen: int):
+    def gtk_display(self, surface: cairo.Surface, msg: str, gen: int):
         if self.parent.generation != gen:
             return
-        self.widget.set_from_pixbuf(pixbuf)
+        self.widget.set_from_surface(surface)
         self.parent.set_status(msg)
 
     def histogram_stretch(
@@ -146,16 +145,15 @@ class Image:
         if self.parent.generation != gen:
             return
         if is_gray:
-            img = np.repeat(img, 3)
-        img = img.ravel()
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGBA)
         if self.parent.generation != gen:
             return
-        pixbuf = GdkPixbuf.Pixbuf.new_from_data(
-            img, GdkPixbuf.Colorspace.RGB, False, 8,
-            width, height, 3 * width)
+        surface = cairo.ImageSurface.create_for_data(
+            img, cairo.FORMAT_RGB24, width, height)
+
         if self.parent.generation != gen:
             return
-        GLib.idle_add(self.gtk_display, pixbuf,
+        GLib.idle_add(self.gtk_display, surface,
                       "Loaded %s" % self.filename, gen)
 
     def display(self, param: Dict[str, Any], op: str):
@@ -163,7 +161,8 @@ class Image:
             "Loading %s" % self.filename)
         self.parent.generation = self.parent.generation + 1
         thread = threading.Thread(
-            target=lambda: self.thread_display(param, op, self.parent.generation))
+            target=lambda: self.thread_display(
+                param, op, self.parent.generation))
         thread.daemon = True
         thread.start()
 
