@@ -265,22 +265,26 @@ class FocuserCmd(Gtk.MenuBar):
         self.add_entry(
             nav_menu, "First Image", self.first_img)
         accel.connect(
-            Gdk.keyval_from_name('Home'), 0, 0,
+            Gdk.keyval_from_name('Home'),
+            Gdk.ModifierType.SHIFT_MASK, 0,
             lambda ac, at, kv, mod: self.first_img(None))
         self.add_entry(
             nav_menu, "Previous Image", self.prev_img)
         accel.connect(
-            Gdk.keyval_from_name('Page_Up'), 0, 0,
+            Gdk.keyval_from_name('Page_Up'),
+            Gdk.ModifierType.SHIFT_MASK, 0,
             lambda ac, at, kv, mod: self.prev_img(None))
         self.add_entry(
             nav_menu, "Next Image", self.next_img)
         accel.connect(
-            Gdk.keyval_from_name('Page_Down'), 0, 0,
+            Gdk.keyval_from_name('Page_Down'),
+            Gdk.ModifierType.SHIFT_MASK, 0,
             lambda ac, at, kv, mod: self.next_img(None))
         self.add_entry(
             nav_menu, "Last Image", self.last_img)
         accel.connect(
-            Gdk.keyval_from_name('End'), 0, 0,
+            Gdk.keyval_from_name('End'),
+            Gdk.ModifierType.SHIFT_MASK, 0,
             lambda ac, at, kv, mod: self.last_img(None))
         self.add_check(
             nav_menu, "Sort by date", self.sort_by_date, False)
