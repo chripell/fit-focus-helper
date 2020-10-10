@@ -24,6 +24,7 @@ class Image:
         self.parent = parent
         self.data = None
         self.cdata = None
+        self.focuser = None
         self.percentiles: Dict[int, Tuple[float, float]] = {}
 
     def report_error(self, msg: str):
@@ -128,6 +129,22 @@ class Image:
             cmax = cmax ** gamma
         return np.clip((img - cmin) / ((cmax - cmin) / 255.0), 0, 255)
 
+    def do_focuser(
+            self, surface: cairo.Surface, param: Dict[str, Any],
+            op: str, scale: float):
+        if param["focuser/show"] == "nothing":
+            return
+        cr = cairo.Context(surface)
+        if (self.focuser is None or
+            op == "new" or op.startswith("focuser/")):
+            self.focuser = focuser.Focuser(
+                algo=param["focuser/finder"],
+                n_stars=param["focuser/n_stars"])
+            if self.data is None:
+                self.make_gray()
+            self.focuser.evaluate(self.data)
+        self.focuser.draw(cr, param["focuser/show"], scale=scale)
+
     def thread_display(self, param: Dict[str, Any], op: str, gen: int):
         if self.parent.generation != gen:
             return
@@ -162,8 +179,13 @@ class Image:
             img, cairo.FORMAT_RGB24, width, height)
         if self.parent.generation != gen:
             return
-        GLib.idle_add(self.gtk_display, surface,
-                      "Loaded %s" % self.filename, gen)
+        self.do_focuser(surface, param, op, scale)
+        if self.parent.generation != gen:
+            return
+        msg = "Loaded %s" % self.filename
+        if param["focuser/show"] != "nothing":
+            msg = msg + ", found %d stars" % self.focuser.num()
+        GLib.idle_add(self.gtk_display, surface, msg, gen)
 
     def display(self, param: Dict[str, Any], op: str):
         self.parent.set_status(
@@ -232,21 +254,11 @@ class FocuserCmd(Gtk.MenuBar):
         self.add_check(
             view_menu, "Invert", self.invert, False)
         self.add_separator(view_menu)
-        self.add_radio(
-            view_menu, 'histogram_stretch', "No histogram stretch",
-            self.histo_0, True)
-        self.add_radio(
-            view_menu, 'histogram_stretch', "Histogram stretch 0.1%",
-            self.histo_01, False)
-        self.add_radio(
-            view_menu, 'histogram_stretch', "Histogram stretch 1%",
-            self.histo_1, False)
-        self.add_radio(
-            view_menu, 'histogram_stretch', "Histogram stretch 5%",
-            self.histo_5, False)
-        self.add_radio(
-            view_menu, 'histogram_stretch', "Histogram stretch 10%",
-            self.histo_10, False)
+        for n in (0, 1, 10, 50, 100):
+            self.add_radio(
+                view_menu, 'histogram_stretch',
+                "Histogram stretch %.1f %%" % (n / 10),
+                lambda w, n=n: self.histo_stretch(w, n), n == 0)
         nav_menu = self.add_sub_menu("_Navigate")
         self.add_entry(
             nav_menu, "Reload List", self.multi_reload)
@@ -274,6 +286,31 @@ class FocuserCmd(Gtk.MenuBar):
             nav_menu, "Sort by date", self.sort_by_date, False)
         self.add_check(
             nav_menu, "Auto reload new pictures", self.auto_reload, False)
+        focuser_menu = self.add_sub_menu("F_ocuser")
+        self.add_radio(
+            focuser_menu, 'star_finder', "Use DAOStarFinder",
+            self.sf_dao, True)
+        self.add_radio(
+            focuser_menu, 'star_finder', "Use IRAFStarFinder",
+            self.sf_iraf, False)
+        self.add_separator(focuser_menu)
+        self.add_radio(
+            focuser_menu, 'focuser_show', "Show Nothing",
+            lambda w: self.sf_show(w, "nothing"), True)
+        self.add_radio(
+            focuser_menu, 'focuser_show', "Show Sharpness",
+            lambda w: self.sf_show(w, "sharpness"), False)
+        self.add_radio(
+            focuser_menu, 'focuser_show', "Show Roundness 1",
+            lambda w: self.sf_show(w, "roundness1"), False)
+        self.add_radio(
+            focuser_menu, 'focuser_show', "Show Roundness 2",
+            lambda w: self.sf_show(w, "roundness2"), False)
+        self.add_separator(focuser_menu)
+        for n in (10, 50, 100, 500, 1000, 5000, 10000):
+            self.add_radio(
+                focuser_menu, 'n_stars', "Show %d stars" % n,
+                lambda w, n=n: self.sf_n_stars(w, n), n == 100)
         self.p.add_accel_group(accel)
 
     def open_picture(self, w):
@@ -328,25 +365,9 @@ class FocuserCmd(Gtk.MenuBar):
         else:
             self.p.set_param("display/gamma_stretch", 0)
 
-    def histo_0(self, w):
+    def histo_stretch(self, w, n):
         if w.get_active():
-            self.p.set_param("display/histogram_stretch_percent", 0)
-
-    def histo_01(self, w):
-        if w.get_active():
-            self.p.set_param("display/histogram_stretch_percent", 1)
-
-    def histo_1(self, w):
-        if w.get_active():
-            self.p.set_param("display/histogram_stretch_percent", 10)
-
-    def histo_5(self, w):
-        if w.get_active():
-            self.p.set_param("display/histogram_stretch_percent", 50)
-
-    def histo_10(self, w):
-        if w.get_active():
-            self.p.set_param("display/histogram_stretch_percent", 100)
+            self.p.set_param("display/histogram_stretch_percent", n)
 
     def scale(self, w):
         self.p.set_param("display/scale", w.get_active())
@@ -372,6 +393,22 @@ class FocuserCmd(Gtk.MenuBar):
 
     def auto_reload(self, w):
         self.p.auto_reload(w.get_active())
+
+    def sf_dao(self, w):
+        if w.get_active():
+            self.p.set_param("focuser/finder", "dao")
+
+    def sf_iraf(self, w):
+        if w.get_active():
+            self.p.set_param("focuser/finder", "iraf")
+
+    def sf_show(self, w, n):
+        if w.get_active():
+            self.p.set_param("focuser/show", n)
+
+    def sf_n_stars(self, w, n):
+        if w.get_active():
+            self.p.set_param("focuser/n_stars", n)
 
 
 class FocuserApp(Gtk.Window):
@@ -404,6 +441,7 @@ class FocuserApp(Gtk.Window):
             "multi/sort_timestamp": False,
             "focuser/finder": "dao",
             "focuser/show": "nothing",
+            "focuser/n_stars": 100,
         }
 
     def run(self):
