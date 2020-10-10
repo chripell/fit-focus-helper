@@ -8,6 +8,7 @@ from astropy.io import fits
 from optparse import OptionParser
 from typing import Dict, Any, Tuple
 import cairo
+import focuser
 import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GdkPixbuf, GLib, Gdk  # nopep8
@@ -89,26 +90,12 @@ class Image:
             self, img: np.ndarray, gamma: float) -> np.ndarray:
         return img ** gamma
 
-    def thread_display(self, param: Dict[str, Any], op: str, gen: int):
-        if self.parent.generation != gen:
-            return
-        if self.data is None and self.cdata is None:
-            if not self.load():
-                return
-        if self.parent.generation != gen:
-            return
-        if param["display/force_gray"] and self.data is None:
-            self.make_gray()
-        is_gray = self.cdata is None or param["display/force_gray"]
-        if is_gray:
-            img = self.data
-        else:
-            img = self.cdata
+    def do_scale(
+            self, img: np.ndarray, param: Dict[str, Any]
+    ) -> Tuple[np.ndarray, float, int, int]:
         scale = 1
         width = self.width
         height = self.height
-        if self.parent.generation != gen:
-            return
         if param["display/scale"]:
             box = self.box.get_allocation()
             scale_w = width / box.width
@@ -124,21 +111,44 @@ class Image:
             else:
                 interpol = cv2.INTER_LINEAR
             img = cv2.resize(img, (width, height), interpolation=interpol)
-        if self.parent.generation != gen:
-            return
+        return (img, scale, width, height)
+
+    def do_stretch(
+            self, img: np.ndarray, param: Dict[str, Any]
+    ) -> np.ndarray:
         cmin = self.black
         cmax = self.white
         if param["display/histogram_stretch_percent"] > 0:
             (cmin, cmax) = self.histogram_stretch(
                 img, param["display/histogram_stretch_percent"])
         gamma = param["display/gamma_stretch"]
-        if self.parent.generation != gen:
-            return
         if gamma > 0:
             img = self.gamma_stretch(img, gamma)
             cmin = cmin ** gamma
             cmax = cmax ** gamma
-        img = np.clip((img - cmin) / ((cmax - cmin) / 255.0), 0, 255)
+        return np.clip((img - cmin) / ((cmax - cmin) / 255.0), 0, 255)
+
+    def thread_display(self, param: Dict[str, Any], op: str, gen: int):
+        if self.parent.generation != gen:
+            return
+        if self.data is None and self.cdata is None:
+            if not self.load():
+                return
+        if self.parent.generation != gen:
+            return
+        if param["display/force_gray"] and self.data is None:
+            self.make_gray()
+        is_gray = self.cdata is None or param["display/force_gray"]
+        if is_gray:
+            img = self.data
+        else:
+            img = self.cdata
+        if self.parent.generation != gen:
+            return
+        (img, scale, width, height) = self.do_scale(img, param)
+        if self.parent.generation != gen:
+            return
+        img = self.do_stretch(img, param)
         img = img.astype(np.uint8)
         if param["display/invert"]:
             img = 255 - img
@@ -150,7 +160,6 @@ class Image:
             return
         surface = cairo.ImageSurface.create_for_data(
             img, cairo.FORMAT_RGB24, width, height)
-
         if self.parent.generation != gen:
             return
         GLib.idle_add(self.gtk_display, surface,
@@ -393,6 +402,8 @@ class FocuserApp(Gtk.Window):
             "display/gamma_stretch": 0,
             "display/force_gray": False,
             "multi/sort_timestamp": False,
+            "focuser/finder": "dao",
+            "focuser/show": "nothing",
         }
 
     def run(self):
