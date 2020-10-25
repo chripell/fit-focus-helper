@@ -11,7 +11,7 @@ import cairo
 import focuser
 import gi
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, GdkPixbuf, GLib, Gdk  # nopep8
+from gi.repository import Gtk, GLib, Gdk  # nopep8
 
 
 class Image:
@@ -143,7 +143,8 @@ class Image:
             if self.data is None:
                 self.make_gray()
             self.focuser.evaluate(self.data)
-        self.focuser.draw(cr, param["focuser/show"], scale=scale)
+        self.focuser.draw(cr, param["focuser/show"], scale=scale,
+                          show_text=param["focuser/text"])
 
     def thread_display(self, param: Dict[str, Any], op: str, gen: int):
         if self.parent.generation != gen:
@@ -315,6 +316,9 @@ class FocuserCmd(Gtk.MenuBar):
             self.add_radio(
                 focuser_menu, 'n_stars', "Show %d stars" % n,
                 lambda w, n=n: self.sf_n_stars(w, n), n == 100)
+        self.add_separator(focuser_menu)
+        self.add_check(
+            focuser_menu, "Show Value", self.show_text)
         self.p.add_accel_group(accel)
 
     def open_picture(self, w):
@@ -414,6 +418,9 @@ class FocuserCmd(Gtk.MenuBar):
         if w.get_active():
             self.p.set_param("focuser/n_stars", n)
 
+    def show_text(self, w):
+        self.p.set_param("focuser/text", w.get_active())
+
 
 class FocuserApp(Gtk.Window):
 
@@ -446,6 +453,7 @@ class FocuserApp(Gtk.Window):
             "focuser/finder": "dao",
             "focuser/show": "nothing",
             "focuser/n_stars": 100,
+            "focuser/text": False,
         }
 
     def run(self):

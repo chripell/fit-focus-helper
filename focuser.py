@@ -41,20 +41,27 @@ class Focuser:
                 self.mean[p] = np.absolute(self.sources.field(p)).mean()
         return self.sources
 
-    def draw(self, cr, par, scale=1.0, radius=10):
+    def draw(self, cr, par, scale=1.0, radius=10, show_text=False):
         if self.sources is None:
             return
         if par not in self.odata:
             par = self.odata[0]
         mean = self.mean[par]
         m_pi = 2 * np.pi
+        cr.set_font_size(15)
         for i in self.sources:
             if abs(i[par]) >= mean:
                 cr.set_source_rgb(0, 1.0, 0)
             else:
                 cr.set_source_rgb(1.0, 0, 0)
-            cr.arc(i["xcentroid"] / scale, i["ycentroid"] / scale,
-                   radius, 0, m_pi)
+            x = i["xcentroid"] / scale
+            y = i["ycentroid"] / scale
+            cr.arc(x, y, radius, 0, m_pi)
+            cr.stroke()
+            if not show_text:
+                continue
+            cr.move_to(x + radius + 2, y + radius + 2)
+            cr.show_text("%.2f" % i[par])
             cr.stroke()
 
     def num(self):
