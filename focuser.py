@@ -1,5 +1,5 @@
 from astropy.stats import sigma_clipped_stats
-from photutils import DAOStarFinder, IRAFStarFinder
+from photutils import DAOStarFinder, IRAFStarFinder, CircularAperture
 import numpy as np
 
 
@@ -30,7 +30,7 @@ class Focuser:
         else:
             finder = IRAFStarFinder(
                 fwhm=self.fwhm, threshold=self.threshold_stds*std,
-                brightest=self.n_stars, minsep_fwhm=5)
+                brightest=self.n_stars, minsep_fwhm=2*self.fwhm)
         self.sources = finder(data - median)
         if self.sources is None:
             return
@@ -44,16 +44,24 @@ class Focuser:
     def draw(self, cr, par, scale=1.0, radius=10, show_text=False):
         if self.sources is None:
             return
-        if par not in self.odata:
+        if par not in self.odata and par not in ("hfr"):
             par = self.odata[0]
         mean = self.mean[par]
         m_pi = 2 * np.pi
         cr.set_font_size(15)
-        for i in self.sources:
-            if abs(i[par]) >= mean:
-                cr.set_source_rgb(0, 1.0, 0)
+        for n, i in enumerate(self.sources):
+            if par == "hfr":
+                val = self.hfr[n]
+                if abs(val) >= mean:
+                    cr.set_source_rgb(1.0, 0, 0)
+                else:
+                    cr.set_source_rgb(0, 1.0, 0)
             else:
-                cr.set_source_rgb(1.0, 0, 0)
+                val = i[par]
+                if abs(val) >= mean:
+                    cr.set_source_rgb(0, 1.0, 0)
+                else:
+                    cr.set_source_rgb(1.0, 0, 0)
             x = i["xcentroid"] / scale
             y = i["ycentroid"] / scale
             cr.arc(x, y, radius, 0, m_pi)
@@ -61,10 +69,33 @@ class Focuser:
             if not show_text:
                 continue
             cr.move_to(x + radius + 2, y + radius + 2)
-            cr.show_text("%.2f" % i[par])
+            cr.show_text("%.2f" % val)
             cr.stroke()
 
     def num(self):
         if self.sources is not None:
             return len(self.sources)
         return 0
+
+    def star_hfr(self, img, x, y):
+        hf_aperture = CircularAperture((x, y), r=2.*self.fwhm)
+        hf = hf_aperture.to_mask(method='exact').multiply(img).sum() / 2.0
+        hfr = self.fwhm
+        step = self.fwhm / 2.0
+        while step > 0.01:
+            hfr_aperture = CircularAperture((x, y), r=hfr)
+            hfr_flux = hfr_aperture.to_mask(method='exact').multiply(img).sum()
+            if hfr_flux > hf:
+                hfr = hfr - step
+            else:
+                hfr = hfr + step
+            step = step / 2.0
+        return hfr
+
+    def hfr(self, img):
+        if self.sources is None:
+            return
+        self.hfr = []
+        for i in self.sources:
+            self.hfr.append(self.star_hfr(img, i["xcentroid"], i["ycentroid"]))
+        self.mean["hfr"] = np.array(self.hfr).mean()

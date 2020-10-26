@@ -143,6 +143,8 @@ class Image:
             if self.data is None:
                 self.make_gray()
             self.focuser.evaluate(self.data)
+            if param["focuser/show"] == "hfr":
+                self.focuser.hfr(self.data)
         self.focuser.draw(cr, param["focuser/show"], scale=scale,
                           show_text=param["focuser/text"])
 
@@ -311,6 +313,9 @@ class FocuserCmd(Gtk.MenuBar):
         self.add_radio(
             focuser_menu, 'focuser_show', "Show Roundness 2",
             lambda w: self.sf_show(w, "roundness2"), False)
+        self.add_radio(
+            focuser_menu, 'focuser_show', "Show HFR",
+            lambda w: self.sf_show(w, "hfr"), False)
         self.add_separator(focuser_menu)
         for n in (10, 50, 100, 500, 1000, 5000, 10000):
             self.add_radio(
