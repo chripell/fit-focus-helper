@@ -139,7 +139,8 @@ class Image:
             op == "new" or op.startswith("focuser/")):
             self.focuser = focuser.Focuser(
                 algo=param["focuser/finder"],
-                n_stars=param["focuser/n_stars"])
+                n_stars=param["focuser/n_stars"],
+                fwhm=param["focuser/fwhm"])
             if self.data is None:
                 self.make_gray()
             self.focuser.evaluate(self.data)
@@ -199,6 +200,32 @@ class Image:
                 param, op, self.parent.generation))
         thread.daemon = True
         thread.start()
+
+
+def get_dialog(parent, message, title, default):
+    dialogWindow = Gtk.MessageDialog(
+        parent=parent,
+        modal=True,
+        destroy_with_parent=True,
+        message_type=Gtk.MessageType.QUESTION,
+        buttons=Gtk.ButtonsType.OK_CANCEL,
+        text=message)
+    dialogWindow.set_title(title)
+    dialogBox = dialogWindow.get_content_area()
+    userEntry = Gtk.Entry()
+    userEntry.set_text(default)
+    userEntry.set_size_request(250, 0)
+    userEntry.connect(
+        "activate", lambda w: dialogWindow.response(Gtk.ResponseType.OK))
+    dialogBox.pack_end(userEntry, False, False, 0)
+    dialogWindow.show_all()
+    response = dialogWindow.run()
+    text = userEntry.get_text()
+    dialogWindow.destroy()
+    if (response == Gtk.ResponseType.OK) and (text != ''):
+        return text
+    else:
+        return None
 
 
 class FocuserCmd(Gtk.MenuBar):
@@ -324,6 +351,8 @@ class FocuserCmd(Gtk.MenuBar):
         self.add_separator(focuser_menu)
         self.add_check(
             focuser_menu, "Show Value", self.show_text)
+        self.add_entry(
+            focuser_menu, "Set FWHM", self.set_fwhm)
         self.p.add_accel_group(accel)
 
     def open_picture(self, w):
@@ -426,6 +455,15 @@ class FocuserCmd(Gtk.MenuBar):
     def show_text(self, w):
         self.p.set_param("focuser/text", w.get_active())
 
+    def set_fwhm(self, w):
+        ret = get_dialog(self.p, "Enter FWHM for star finders", "FWHM",
+                         "%.2f" % self.p.get_param("focuser/fwhm"))
+        try:
+            val = float(ret)
+        except (TypeError, ValueError):
+            return
+        self.p.set_param("focuser/fwhm", val)
+
 
 class FocuserApp(Gtk.Window):
 
@@ -459,6 +497,7 @@ class FocuserApp(Gtk.Window):
             "focuser/show": "nothing",
             "focuser/n_stars": 100,
             "focuser/text": False,
+            "focuser/fwhm": 3.0,
         }
 
     def run(self):
@@ -545,6 +584,9 @@ class FocuserApp(Gtk.Window):
             return
         self.param[par] = val
         self.img.display(self.param, par)
+
+    def get_param(self, par: str):
+        return self.param[par]
 
     def broken(self, filename: str):
         if self.fit_files is None:
