@@ -140,7 +140,8 @@ class Image:
             self.focuser = focuser.Focuser(
                 algo=param["focuser/finder"],
                 n_stars=param["focuser/n_stars"],
-                fwhm=param["focuser/fwhm"])
+                fwhm=param["focuser/fwhm"],
+                threshold_stds=param["focuser/threshold"])
             if self.data is None:
                 self.make_gray()
             self.focuser.evaluate(self.data)
@@ -353,6 +354,8 @@ class FocuserCmd(Gtk.MenuBar):
             focuser_menu, "Show Value", self.show_text)
         self.add_entry(
             focuser_menu, "Set FWHM", self.set_fwhm)
+        self.add_entry(
+            focuser_menu, "Set Threshold", self.set_threshold)
         self.p.add_accel_group(accel)
 
     def open_picture(self, w):
@@ -464,6 +467,16 @@ class FocuserCmd(Gtk.MenuBar):
             return
         self.p.set_param("focuser/fwhm", val)
 
+    def set_threshold(self, w):
+        ret = get_dialog(self.p, "Enter threshold (in stds) for star finder",
+                         "Threshold",
+                         "%.2f" % self.p.get_param("focuser/threshold"))
+        try:
+            val = float(ret)
+        except (TypeError, ValueError):
+            return
+        self.p.set_param("focuser/threshold", val)
+
 
 class FocuserApp(Gtk.Window):
 
@@ -498,6 +511,7 @@ class FocuserApp(Gtk.Window):
             "focuser/n_stars": 100,
             "focuser/text": False,
             "focuser/fwhm": 3.0,
+            "focuser/threshold": 3.0,
         }
 
     def run(self):
