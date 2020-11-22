@@ -23,7 +23,9 @@ You need to have the following Python libraries installed:
 
 * `pip install pycairo`, Cairo, for drawing annotations on images.
 
-* `pip install pygobject`, PyGObjects bindings for Gtk3, GLib and Gdk.
+* `pip install PyGObject`, PyGObjects bindings for Gtk3, GLib and Gdk.
 
 * `pip install photutils`, photutils, for the source detection
   routines.
+
+* `pip install scipy`, SciPy, dependency for photutils.
