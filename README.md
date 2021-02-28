@@ -1,3 +1,5 @@
+**This is not an officially supported Google product**
+
 # fit-focus-helper
 
 `fit-focus-helper` is a tool which can help to achieve better focus
