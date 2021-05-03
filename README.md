@@ -1,11 +1,15 @@
 **This is not an officially supported Google product**
 
-# fit-focus-helper
+# fit-image-helper
 
-`fit-focus-helper` is a tool which can help to achieve better focus
-and collimation while imaging. It can measure various parameters of
+`fit-image-helper` is a set of tool for image processing.
+
+## Focusing and Collimation
+
+`fit-image-helper` can help to achieve better focus and collimation
+while doing astronomical imaging. It can measure various parameters of
 stars in the field (sharpness, roundness, half flux
-radius). `fit-focus-helper` doesn't acquire images, but waits for them
+radius). `fit-image-helper` doesn't acquire images, but waits for them
 to appear in a directory (it periodically polls its contents, right
 now it doesn't use smarter methods like inotify). The tool is
 tested/used with the ASI1600MC and ASI178MM. It is also a quick fits
