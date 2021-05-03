@@ -2,7 +2,8 @@
 
 # fit-image-helper
 
-`fit-image-helper` is a set of tool for image processing.
+`fit-image-helper` is a set of tool for image processing. It is also a
+quick fits image browser.
 
 ## Focusing and Collimation
 
@@ -12,8 +13,7 @@ stars in the field (sharpness, roundness, half flux
 radius). `fit-image-helper` doesn't acquire images, but waits for them
 to appear in a directory (it periodically polls its contents, right
 now it doesn't use smarter methods like inotify). The tool is
-tested/used with the ASI1600MC and ASI178MM. It is also a quick fits
-image browser.
+tested/used with the ASI1600MC and ASI178MM. 
 
 ## dependencies
 
