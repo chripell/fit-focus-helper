@@ -245,7 +245,7 @@ def get_dialog(parent, message, title, default):
         return None
 
 
-class FocuserCmd(Gtk.MenuBar):
+class ImagerCmd(Gtk.MenuBar):
 
     def add_sub_menu(self, name):
         sub = Gtk.MenuItem.new_with_mnemonic(name)
@@ -434,16 +434,16 @@ class FocuserCmd(Gtk.MenuBar):
         self.p.set_param("display/scale", w.get_active())
 
     def first_img(self, w):
-        self.p.show_img(FocuserApp.IMG_FIRST)
+        self.p.show_img(ImagerApp.IMG_FIRST)
 
     def last_img(self, w):
-        self.p.show_img(FocuserApp.IMG_LAST)
+        self.p.show_img(ImagerApp.IMG_LAST)
 
     def next_img(self, w):
-        self.p.show_img(FocuserApp.IMG_NEXT)
+        self.p.show_img(ImagerApp.IMG_NEXT)
 
     def prev_img(self, w):
-        self.p.show_img(FocuserApp.IMG_PREV)
+        self.p.show_img(ImagerApp.IMG_PREV)
 
     def multi_reload(self, w):
         self.p.multi_reload()
@@ -494,7 +494,7 @@ class FocuserCmd(Gtk.MenuBar):
         self.p.set_param("focuser/threshold", val)
 
 
-class FocuserApp(Gtk.Window):
+class ImagerApp(Gtk.Window):
 
     IMG_FIRST = 0
     IMG_LAST = -1
@@ -547,14 +547,14 @@ class FocuserApp(Gtk.Window):
             self, title="FIT Focus Helper", *self.args)
         self.main = Gtk.VBox()
         self.add(self.main)
-        menu = FocuserCmd(self)
+        menu = ImagerCmd(self)
         self.main.pack_start(menu, False, False, 0)
         self.scroll = Gtk.ScrolledWindow()
         self.image = Gtk.Image()
         self.scroll.add(self.image)
         self.main.pack_start(self.scroll, True, True, 0)
         self.status = Gtk.Statusbar()
-        self.status_id = self.status.get_context_id("Focuser App")
+        self.status_id = self.status.get_context_id("Imager App")
         self.set_status("No Image")
         self.main.pack_end(self.status, False, False, 0)
         self.connect("delete-event", Gtk.main_quit)
@@ -644,7 +644,7 @@ class FocuserApp(Gtk.Window):
 
 
 if __name__ == "__main__":
-    app = FocuserApp()
+    app = ImagerApp()
     app.setup()
     app.run()
     Gtk.main()
