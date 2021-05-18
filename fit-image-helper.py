@@ -15,7 +15,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-
 import numpy as np
 import cv2
 import threading
@@ -27,7 +26,7 @@ import cairo
 import focuser
 import gi
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, GLib, Gdk  # nopep8
+from gi.repository import Gtk, GLib, Gdk
 
 
 class Image:
@@ -500,6 +499,7 @@ class ImagerApp(Gtk.Window):
     IMG_LAST = -1
     IMG_NEXT = -2
     IMG_PREV = -3
+    IMG_REDRAW = -4
 
     def __init__(self):
         parser = OptionParser(usage="usage: %prog [opts]")
@@ -515,6 +515,7 @@ class ImagerApp(Gtk.Window):
         self.do_reload = False
         self.timer = None
         self.generation = 0
+        self.file_list_rows = []
         self.param = {
             "display/scale": True,
             "display/invert": False,
@@ -542,6 +543,10 @@ class ImagerApp(Gtk.Window):
             msg = "(%d/%d) %s" % (self.current + 1, len(self.fit_files), msg)
         self.status.push(self.status_id, msg)
 
+    def write_status(self, msg: str):
+        self.status.remove_all(self.status_id)
+        self.status.push(self.status_id, msg)
+
     def setup(self):
         Gtk.Window.__init__(
             self, title="FIT Focus Helper", *self.args)
@@ -552,7 +557,17 @@ class ImagerApp(Gtk.Window):
         self.scroll = Gtk.ScrolledWindow()
         self.image = Gtk.Image()
         self.scroll.add(self.image)
-        self.main.pack_start(self.scroll, True, True, 0)
+        # For directory mode:
+        self.paned = Gtk.HPaned()
+        self.scroll_list = Gtk.ScrolledWindow()
+        self.file_list = Gtk.ListBox()
+        self.scroll_list.add(self.file_list)
+        self.paned.add1(self.scroll_list)
+        self.paned.add2(self.scroll)
+        self.main.pack_start(self.paned, True, True, 0)
+        # Default is single mode.
+        self.paned.set_position(0)
+        self.param["mode"] = "single"
         self.status = Gtk.Statusbar()
         self.status_id = self.status.get_context_id("Imager App")
         self.set_status("No Image")
@@ -560,12 +575,35 @@ class ImagerApp(Gtk.Window):
         self.connect("delete-event", Gtk.main_quit)
         self.show_all()
 
-    def single_image(self, filename: str):
+    def clear_file_list(self):
+        for row in self.file_list_rows:
+            self.file_list.remove(row)
+        self.file_list_rows = []
+
+    def clear_multi(self):
         self.dire = None
         self.current = None
         self.fit_files = None
+        self.paned.set_position(0)
+        self.clear_file_list()
+
+    def single_image(self, filename: str):
+        self.clear_multi()
+        self.image.clear()
+        self.param["mode"] = "single"
         self.img = Image(filename, self)
         self.img.display(self.param, "new")
+
+    def scroll_list_box(self):
+        row = self.file_list.get_selected_row()
+        if not row:
+            return
+        dx, dy = row.translate_coordinates(self.file_list, 0, 0)
+        adj = self.file_list.get_adjustment()
+        if not adj:
+            return
+        rw, rh = row.get_preferred_height()
+        adj.set_value(dy - (adj.get_page_size() - rh) / 2)
 
     def show_img(self, what: int):
         if self.fit_files is None:
@@ -573,23 +611,31 @@ class ImagerApp(Gtk.Window):
         ll = len(self.fit_files)
         if ll == 0:
             return
+        force = False
         if what == self.IMG_LAST:
             what = ll - 1
         elif what == self.IMG_NEXT and self.current is not None:
             what = self.current + 1
         elif what == self.IMG_PREV and self.current is not None:
             what = self.current - 1
+        elif what == self.IMG_REDRAW:
+            if not self.current:
+                return
+            force = True
+            what = self.current
         if what >= ll:
             what = ll - 1
         if what < 0:
             what = 0
-        if what == self.current:
+        if what == self.current and not force:
             return
+        self.file_list.select_row(self.file_list_rows[what])
         self.current = what
         self.img = Image(self.fit_files[self.current][0], self)
         self.img.display(self.param, "new")
+        GLib.idle_add(self.scroll_list_box)
 
-    def multi_image(self, dire: str):
+    def add_to_file_list(self, dire: str) -> bool:
         fit_files1 = [os.path.join(dire, f) for f in os.listdir(dire) if (
             os.path.isfile(os.path.join(dire, f)) and
             os.path.splitext(f)[1].lower() == ".fit")]
@@ -599,10 +645,35 @@ class ImagerApp(Gtk.Window):
             key = 1
         fit_files.sort(key=lambda x: x[key])
         if self.fit_files == fit_files:
-            return
+            return False
+        self.clear_file_list()
+        for f, tstamp in fit_files:
+            row = Gtk.ListBoxRow()
+            b = os.path.basename(f)
+            row.add(Gtk.Label(label=b))
+            self.file_list.add(row)
+            self.file_list_rows.append(row)
         self.fit_files = fit_files
+        return True
+
+    def multi_image(self, dire: str):
+        if not self.add_to_file_list(dire):
+            return
+        self.image.clear()
+        self.show_all()
+        self.write_status("")
+        self.file_list.connect(
+            "row-activated",
+            lambda l, r: self.show_img(r.get_index()))
         self.dire = dire
+        pmin, _ = self.file_list.get_preferred_width()
+        if not pmin:
+            pmin = 200
+        self.paned.set_position(pmin)
         self.show_img(self.IMG_LAST)
+        self.paned.connect(
+            "notify::position",
+            lambda w, u: self.show_img(self.IMG_REDRAW))
 
     def multi_reload(self):
         if self.dire is None:
@@ -619,13 +690,7 @@ class ImagerApp(Gtk.Window):
         return self.param[par]
 
     def broken(self, filename: str):
-        if self.fit_files is None:
-            return
-        for (i, el) in self.fit_files:
-            if el[1] == filename:
-                del self.fit_files[i]
-                break
-        self.show_img(self.IMG_LAST)
+        self.image.clear()
 
     def auto_reload(self, state):
         self.do_reload = state
@@ -634,7 +699,7 @@ class ImagerApp(Gtk.Window):
                 GLib.source_remove(self.timer)
                 self.timer = None
             return
-        self.timer = GLib.timeout_add_seconds(5, self.timer_tick)
+        self.timer = GLib.timeout_add_seconds(1, self.timer_tick)
 
     def timer_tick(self):
         if self.do_reload is None:
