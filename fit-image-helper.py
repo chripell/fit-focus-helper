@@ -17,8 +17,10 @@ limitations under the License.
 
 import numpy as np
 import cv2
+import json
 import threading
 import os
+import pathlib
 from astropy.io import fits
 from optparse import OptionParser
 from typing import Dict, Any, Tuple
@@ -264,6 +266,7 @@ class ImagerCmd(Gtk.MenuBar):
             item.set_active(True)
         item.connect("activate", command)
         menu.append(item)
+        return item
 
     def add_radio(self, menu, group, name, command, active):
         item = Gtk.RadioMenuItem(
@@ -273,12 +276,14 @@ class ImagerCmd(Gtk.MenuBar):
         if active:
             item.set_active(active)
         menu.append(item)
+        return item
 
     def add_separator(self, menu):
         menu.append(Gtk.SeparatorMenuItem())
 
     def __init__(self, parent):
         self.p = parent
+        self.w = {}
         Gtk.MenuBar.__init__(self)
         accel = Gtk.AccelGroup()
         self._groups = {}
@@ -289,19 +294,24 @@ class ImagerCmd(Gtk.MenuBar):
             file_menu, "Open Directory", self.open_directory)
         self.add_separator(file_menu)
         self.add_entry(
+            file_menu, "Load Configuration", self.load_conf)
+        self.add_entry(
+            file_menu, "Save Configuration", self.save_conf)
+        self.add_separator(file_menu)
+        self.add_entry(
             file_menu, "Exit", self.exit_app)
         view_menu = self.add_sub_menu("_View")
-        self.add_check(
+        self.w["force_gray"] = self.add_check(
             view_menu, "Force Gray", self.force_gray)
-        self.add_check(
+        self.w["gamma_stretch"] = self.add_check(
             view_menu, "Gamma Stretch", self.gamma_stretch)
-        self.add_check(
+        self.w["scale"] = self.add_check(
             view_menu, "Zoom to fit", self.scale, True)
-        self.add_check(
+        self.w["invert"] = self.add_check(
             view_menu, "Invert", self.invert, False)
         self.add_separator(view_menu)
         for n in (0, 1, 10, 50, 100):
-            self.add_radio(
+            self.w[f"histogram_stretch_percent_{n}"] = self.add_radio(
                 view_menu, 'histogram_stretch',
                 "Histogram stretch %.1f %%" % (n / 10),
                 lambda w, n=n: self.histo_stretch(w, n), n == 0)
@@ -332,40 +342,40 @@ class ImagerCmd(Gtk.MenuBar):
             Gdk.keyval_from_name('End'),
             Gdk.ModifierType.SHIFT_MASK, 0,
             lambda ac, at, kv, mod: self.last_img(None))
-        self.add_check(
+        self.w["sort_timestamp"] = self.add_check(
             nav_menu, "Sort by date", self.sort_by_date, False)
         self.add_check(
             nav_menu, "Auto reload new pictures", self.auto_reload, False)
         focuser_menu = self.add_sub_menu("F_ocuser")
-        self.add_radio(
+        self.w["finder_dao"] = self.add_radio(
             focuser_menu, 'star_finder', "Use DAOStarFinder",
             self.sf_dao, True)
-        self.add_radio(
+        self.w["finder_iraf"] = self.add_radio(
             focuser_menu, 'star_finder', "Use IRAFStarFinder",
             self.sf_iraf, False)
         self.add_separator(focuser_menu)
-        self.add_radio(
+        self.w["show_nothing"] = self.add_radio(
             focuser_menu, 'focuser_show', "Show Nothing",
             lambda w: self.sf_show(w, "nothing"), True)
-        self.add_radio(
+        self.w["show_sharpness"] = self.add_radio(
             focuser_menu, 'focuser_show', "Show Sharpness",
             lambda w: self.sf_show(w, "sharpness"), False)
-        self.add_radio(
+        self.w["show_roundness1"] = self.add_radio(
             focuser_menu, 'focuser_show', "Show Roundness 1",
             lambda w: self.sf_show(w, "roundness1"), False)
-        self.add_radio(
+        self.w["show_roundness2"] = self.add_radio(
             focuser_menu, 'focuser_show', "Show Roundness 2",
             lambda w: self.sf_show(w, "roundness2"), False)
-        self.add_radio(
+        self.w["show_hfr"] = self.add_radio(
             focuser_menu, 'focuser_show', "Show HFR",
             lambda w: self.sf_show(w, "hfr"), False)
         self.add_separator(focuser_menu)
         for n in (10, 50, 100, 500, 1000, 5000, 10000):
-            self.add_radio(
+            self.w[f"n_stars_{n}"] = self.add_radio(
                 focuser_menu, 'n_stars', "Show %d stars" % n,
                 lambda w, n=n: self.sf_n_stars(w, n), n == 100)
         self.add_separator(focuser_menu)
-        self.add_check(
+        self.w["text"] = self.add_check(
             focuser_menu, "Show Value", self.show_text)
         self.add_entry(
             focuser_menu, "Set FWHM", self.set_fwhm)
@@ -492,6 +502,67 @@ class ImagerCmd(Gtk.MenuBar):
             return
         self.p.set_param("focuser/threshold", val)
 
+    def save_conf(self, w):
+        dest = os.path.join(pathlib.Path.home(), ".config", "fit-image-helper")
+        pathlib.Path(dest).mkdir(parents=True, exist_ok=True)
+        dialog = Gtk.FileChooserDialog(
+            title="Please choose where to save the configuration",
+            parent=self.p, action=Gtk.FileChooserAction.SAVE
+        )
+        dialog.set_filename(os.path.join(dest, "default.fih"))
+        dialog.set_current_name("default.fih")
+        dialog.add_buttons(
+            Gtk.STOCK_CANCEL,
+            Gtk.ResponseType.CANCEL,
+            Gtk.STOCK_SAVE,
+            Gtk.ResponseType.OK,
+        )
+        filter_fit = Gtk.FileFilter()
+        filter_fit.set_name("Configuration files")
+        filter_fit.add_pattern("*.fih")
+        dialog.add_filter(filter_fit)
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            filename = dialog.get_filename()
+            if not filename.endswith('.fih'):
+                filename += '.fih'
+            self.p.save_conf(filename)
+        dialog.destroy()
+
+    def load_conf(self, w):
+        dest = os.path.join(pathlib.Path.home(), ".config", "fit-image-helper")
+        dialog = Gtk.FileChooserDialog(
+            title="Please choose a configuration to load",
+            parent=self.p, action=Gtk.FileChooserAction.OPEN
+        )
+        dialog.add_buttons(
+            Gtk.STOCK_CANCEL,
+            Gtk.ResponseType.CANCEL,
+            Gtk.STOCK_OPEN,
+            Gtk.ResponseType.OK,
+        )
+        dialog.set_filename(os.path.join(dest, "dummy"))
+        filter_fit = Gtk.FileFilter()
+        filter_fit.set_name("Fit images")
+        filter_fit.add_pattern("*.fih")
+        dialog.add_filter(filter_fit)
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            self.p.load_conf(dialog.get_filename())
+        dialog.destroy()
+
+    def update_ui(self, param):
+        for i in ("force_gray", "invert", "gamma_stretch", "scale"):
+            self.w[i].set_active(param[f"display/{i}"])
+        self.w[
+            "histogram_stretch_percent_"
+            f"{param['display/histogram_stretch_percent']}"].set_active(True)
+        self.w["sort_timestamp"].set_active(param["multi/sort_timestamp"])
+        self.w["finder_" f"{param['focuser/finder']}"].set_active(True)
+        self.w["show_" f"{param['focuser/show']}"].set_active(True)
+        self.w["n_stars_" f"{param['focuser/n_stars']}"].set_active(True)
+        self.w["text"].set_active(param["focuser/text"])
+
 
 class ImagerApp(Gtk.Window):
 
@@ -507,6 +578,8 @@ class ImagerApp(Gtk.Window):
                           help="Open a single image")
         parser.add_option("--dir", type="string", default="",
                           help="Open a directory")
+        parser.add_option("--config", type="string", default="",
+                          help="Use config file")
         (self.options, self.args) = parser.parse_args()
         self.img = None
         self.dire = None
@@ -536,6 +609,8 @@ class ImagerApp(Gtk.Window):
             GLib.timeout_add(500, self.single_image, self.options.image)
         elif self.options.dir != "":
             GLib.timeout_add(500, self.multi_image, self.options.dir)
+        elif self.options.config != "":
+            GLib.timeout_add(500, self.load_conf, self.options.config)
 
     def set_status(self, msg: str):
         self.status.remove_all(self.status_id)
@@ -552,12 +627,11 @@ class ImagerApp(Gtk.Window):
             self, title="FIT Focus Helper", *self.args)
         self.main = Gtk.VBox()
         self.add(self.main)
-        menu = ImagerCmd(self)
-        self.main.pack_start(menu, False, False, 0)
+        self.menu = ImagerCmd(self)
+        self.main.pack_start(self.menu, False, False, 0)
         self.scroll = Gtk.ScrolledWindow()
         self.image = Gtk.Image()
         self.scroll.add(self.image)
-        # For directory mode:
         self.paned = Gtk.HPaned()
         self.scroll_list = Gtk.ScrolledWindow()
         self.file_list = Gtk.ListBox()
@@ -565,9 +639,8 @@ class ImagerApp(Gtk.Window):
         self.paned.add1(self.scroll_list)
         self.paned.add2(self.scroll)
         self.main.pack_start(self.paned, True, True, 0)
-        # Default is single mode.
         self.paned.set_position(0)
-        self.param["mode"] = "single"
+        self.param["mode"] = "empty"
         self.status = Gtk.Statusbar()
         self.status_id = self.status.get_context_id("Imager App")
         self.set_status("No Image")
@@ -588,6 +661,7 @@ class ImagerApp(Gtk.Window):
         self.clear_file_list()
 
     def single_image(self, filename: str):
+        self.param["target"] = filename
         self.clear_multi()
         self.image.clear()
         self.param["mode"] = "single"
@@ -657,6 +731,8 @@ class ImagerApp(Gtk.Window):
         return True
 
     def multi_image(self, dire: str):
+        self.param["target"] = dire
+        self.param["mode"] = "multi"
         if not self.add_to_file_list(dire):
             return
         self.image.clear()
@@ -706,6 +782,26 @@ class ImagerApp(Gtk.Window):
             return False
         self.multi_reload()
         return True
+
+    def save_conf(self, fname: str):
+        with open(fname, "w") as f:
+            json.dump(self.param, f)
+
+    def load_conf(self, fname: str):
+        with open(fname, "r") as f:
+            new_param = json.load(f)
+            if self.param["mode"] != "empty":
+                try:
+                    del new_param["target"]
+                    del new_param["mode"]
+                except KeyError:
+                    pass
+            self.param.update(new_param)
+        self.menu.update_ui(self.param)
+        if self.param["mode"] == "single":
+            self.single_image(self.param["target"])
+        elif self.param["mode"] == "multi":
+            self.multi_image(self.param["target"])
 
 
 if __name__ == "__main__":
