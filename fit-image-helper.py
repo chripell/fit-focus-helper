@@ -48,7 +48,7 @@ class Image:
         self.parent.set_status(msg)
         self.parent.broken(self.filename)
 
-    def load(self) -> bool:
+    def load(self, param: Dict[str, Any]) -> bool:
         try:
             hdul = fits.open(self.filename)
             self.data = hdul[0].data
@@ -74,7 +74,12 @@ class Image:
             pass
         if self.bayer == "GRBG":
             # TODO: other bayer
-            self.cdata = cv2.cvtColor(self.data, cv2.COLOR_BAYER_GR2RGBA)
+            if param["display/lab"]:
+                d = cv2.cvtColor(self.data, cv2.COLOR_BAYER_GR2RGB)
+                d = d.astype(np.float32) / 65535.0
+                self.cdata = cv2.cvtColor(d, cv2.COLOR_RGB2HLS)
+            else:
+                self.cdata = cv2.cvtColor(self.data, cv2.COLOR_BAYER_GR2RGBA)
             self.data = None
         return True
 
@@ -171,7 +176,7 @@ class Image:
         if self.parent.generation != gen:
             return
         if self.data is None and self.cdata is None:
-            if not self.load():
+            if not self.load(param):
                 return
         if self.parent.generation != gen:
             return
@@ -187,7 +192,13 @@ class Image:
         (img, scale, width, height) = self.do_scale(img, param)
         if self.parent.generation != gen:
             return
-        img = self.do_stretch(img, param)
+        if param["display/lab"]:
+            if not is_gray:
+                img = cv2.cvtColor(img, cv2.COLOR_HLS2BGR)
+                img *= 255
+                img = cv2.cvtColor(img, cv2.COLOR_RGB2BGRA)
+        else:
+            img = self.do_stretch(img, param)
         img = img.astype(np.uint8)
         if param["display/invert"]:
             img = 255 - img
@@ -595,6 +606,7 @@ class ImagerApp(Gtk.Window):
             "display/histogram_stretch_percent": 0,
             "display/gamma_stretch": 0,
             "display/force_gray": False,
+            "display/lab": False,
             "multi/sort_timestamp": False,
             "focuser/finder": "dao",
             "focuser/show": "nothing",
