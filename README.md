@@ -3,7 +3,7 @@
 # fit-image-helper
 
 `fit-image-helper` is a set of tool for image processing. It is also a
-quick fits image browser.
+quick fits image browser ans upports streaminf from ZWO ASI Cams.
 
 ## Focusing and Collimation
 
