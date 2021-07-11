@@ -3,7 +3,8 @@
 # fit-image-helper
 
 `fit-image-helper` is a set of tool for image processing. It is also a
-quick fits image browser ans upports streaminf from ZWO ASI Cams.
+quick fits image browser and supports streaming from ZWO ASI Cams and
+controlling a Telescope via INDI.
 
 ## Focusing and Collimation
 
@@ -35,3 +36,6 @@ You need to have the following Python libraries installed:
   routines.
 
 * `pip install scipy`, SciPy, dependency for photutils.
+
+* [PyIndi client](https://github.com/chripell/pyindi-client) with
+  fixed support for INDI 1.9.x.
