@@ -29,12 +29,6 @@ from gi.repository import Gtk, GLib
 
 class ImagerApp(Gtk.Window):
 
-    IMG_FIRST = 0
-    IMG_LAST = -1
-    IMG_NEXT = -2
-    IMG_PREV = -3
-    IMG_REDRAW = -4
-
     def __init__(self):
         parser = OptionParser(usage="usage: %prog [opts]")
         parser.add_option("--image", type="string", default="",
@@ -55,6 +49,7 @@ class ImagerApp(Gtk.Window):
         self.generation = 0
         self.file_list_rows = []
         self.cam = None
+        self.indi = None
         self.param = {
             "display/scale": True,
             "display/invert": False,
@@ -81,6 +76,10 @@ class ImagerApp(Gtk.Window):
             "cam/temp": 0,
             "cam/mode": 0,
             "cam/bin": 1,
+            "indi/hostname": "localhost",
+            "indi/port": 7624,
+            "indi/match_telescope": "Telescope Simulator|SynScan",
+            "indi/keys": True,
         }
 
     def run(self):
@@ -128,6 +127,7 @@ class ImagerApp(Gtk.Window):
         self.set_status("No Image")
         self.main.pack_end(self.status, False, False, 0)
         self.connect("delete-event", Gtk.main_quit)
+        self.menu.hook_keys()
         self.show_all()
 
     def clear_file_list(self):
@@ -169,13 +169,13 @@ class ImagerApp(Gtk.Window):
         if ll == 0:
             return
         force = False
-        if what == self.IMG_LAST:
+        if what == ImagerCmd.IMG_LAST:
             what = ll - 1
-        elif what == self.IMG_NEXT and self.current is not None:
+        elif what == ImagerCmd.IMG_NEXT and self.current is not None:
             what = self.current + 1
-        elif what == self.IMG_PREV and self.current is not None:
+        elif what == ImagerCmd.IMG_PREV and self.current is not None:
             what = self.current - 1
-        elif what == self.IMG_REDRAW:
+        elif what == ImagerCmd.IMG_REDRAW:
             if not self.current:
                 return
             force = True
@@ -230,10 +230,10 @@ class ImagerApp(Gtk.Window):
         if not pmin:
             pmin = 200
         self.paned.set_position(pmin)
-        self.show_img(self.IMG_LAST)
+        self.show_img(ImagerCmd.IMG_LAST)
         self.paned.connect(
             "notify::position",
-            lambda w, u: self.show_img(self.IMG_REDRAW))
+            lambda w, u: self.show_img(ImagerCmd.IMG_REDRAW))
 
     def multi_reload(self):
         if self.dire is None:
@@ -241,9 +241,9 @@ class ImagerApp(Gtk.Window):
         self.multi_image(self.dire)
 
     def set_param(self, par: str, val):
+        self.param[par] = val
         if self.img is None:
             return
-        self.param[par] = val
         if not self.cam:
             self.img.display(self.param, par)
 

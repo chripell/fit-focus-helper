@@ -3,8 +3,9 @@ import pathlib
 import os
 import gi
 from fih_cam import list_zwo_cams
+from fih_indi import Indi
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, GLib, Gdk
+from gi.repository import Gtk, Gdk
 
 
 def get_dialog(parent, message, title, default):
@@ -35,6 +36,35 @@ def get_dialog(parent, message, title, default):
 
 class ImagerCmd(Gtk.MenuBar):
 
+    IMG_FIRST = 0
+    IMG_LAST = -1
+    IMG_NEXT = -2
+    IMG_PREV = -3
+    IMG_REDRAW = -4
+
+    KEY_MAP = {
+        Gdk.KEY_KP_1: 1,
+        Gdk.KEY_KP_End: 1,
+        Gdk.KEY_Down: 2,
+        Gdk.KEY_KP_Down: 2,
+        Gdk.KEY_KP_2: 2,
+        Gdk.KEY_KP_Page_Down: 3,
+        Gdk.KEY_KP_3: 3,
+        Gdk.KEY_KP_Left: 4,
+        Gdk.KEY_KP_4: 4,
+        Gdk.KEY_Left: 4,
+        Gdk.KEY_Right: 6,
+        Gdk.KEY_KP_Right: 6,
+        Gdk.KEY_KP_6: 6,
+        Gdk.KEY_KP_Home: 7,
+        Gdk.KEY_KP_7: 7,
+        Gdk.KEY_Up: 8,
+        Gdk.KEY_KP_Up: 8,
+        Gdk.KEY_KP_8: 8,
+        Gdk.KEY_KP_Page_Up: 9,
+        Gdk.KEY_KP_9: 9,
+    }
+
     def add_sub_menu(self, name):
         sub = Gtk.MenuItem.new_with_mnemonic(name)
         self.append(sub)
@@ -46,6 +76,7 @@ class ImagerCmd(Gtk.MenuBar):
         item = Gtk.MenuItem(label=name)
         item.connect("activate", command)
         menu.append(item)
+        return item
 
     def add_check(self, menu, name, command, on=False):
         item = Gtk.CheckMenuItem(label=name)
@@ -72,7 +103,6 @@ class ImagerCmd(Gtk.MenuBar):
         self.p = parent
         self.w = {}
         Gtk.MenuBar.__init__(self)
-        accel = Gtk.AccelGroup()
         self._groups = {}
 
         file_menu = self.add_sub_menu("_File")
@@ -87,6 +117,8 @@ class ImagerCmd(Gtk.MenuBar):
             file_menu, "Load Configuration", self.load_conf)
         self.add_entry(
             file_menu, "Save Configuration", self.save_conf)
+        self.add_separator(file_menu)
+        self.add_entry(file_menu, "INDI Menu", self.show_indi)
         self.add_separator(file_menu)
         self.add_entry(
             file_menu, "Exit", self.exit_app)
@@ -112,34 +144,22 @@ class ImagerCmd(Gtk.MenuBar):
             cam_menu, "Controls", self.cam_controls)
         self.w["cam_run"] = self.add_check(
             cam_menu, "Run", self.cam_run)
+        self.add_separator(cam_menu)
+        self.w["indi/keys"] = self.add_check(
+            cam_menu, "Enable Indi Keys", self.indi_keys,
+            self.p.param["indi/keys"])
 
         nav_menu = self.add_sub_menu("_Navigate")
         self.add_entry(
             nav_menu, "Reload List", self.multi_reload)
         self.add_entry(
             nav_menu, "First Image", self.first_img)
-        accel.connect(
-            Gdk.keyval_from_name('Home'),
-            Gdk.ModifierType.SHIFT_MASK, 0,
-            lambda ac, at, kv, mod: self.first_img(None))
         self.add_entry(
             nav_menu, "Previous Image", self.prev_img)
-        accel.connect(
-            Gdk.keyval_from_name('Page_Up'),
-            Gdk.ModifierType.SHIFT_MASK, 0,
-            lambda ac, at, kv, mod: self.prev_img(None))
         self.add_entry(
             nav_menu, "Next Image", self.next_img)
-        accel.connect(
-            Gdk.keyval_from_name('Page_Down'),
-            Gdk.ModifierType.SHIFT_MASK, 0,
-            lambda ac, at, kv, mod: self.next_img(None))
         self.add_entry(
             nav_menu, "Last Image", self.last_img)
-        accel.connect(
-            Gdk.keyval_from_name('End'),
-            Gdk.ModifierType.SHIFT_MASK, 0,
-            lambda ac, at, kv, mod: self.last_img(None))
         self.w["sort_timestamp"] = self.add_check(
             nav_menu, "Sort by date", self.sort_by_date, False)
         self.add_check(
@@ -180,7 +200,10 @@ class ImagerCmd(Gtk.MenuBar):
             focuser_menu, "Set FWHM", self.set_fwhm)
         self.add_entry(
             focuser_menu, "Set Threshold", self.set_threshold)
-        self.p.add_accel_group(accel)
+
+        help_menu = self.add_sub_menu("_Help")
+        self.add_entry(
+            help_menu, "Keyboard shortcut", self.help_keys)
 
     def open_picture(self, w):
         dialog = Gtk.FileChooserDialog(
@@ -242,16 +265,16 @@ class ImagerCmd(Gtk.MenuBar):
         self.p.set_param("display/scale", w.get_active())
 
     def first_img(self, w):
-        self.p.show_img(ImagerApp.IMG_FIRST)
+        self.p.show_img(self.IMG_FIRST)
 
     def last_img(self, w):
-        self.p.show_img(ImagerApp.IMG_LAST)
+        self.p.show_img(self.IMG_LAST)
 
     def next_img(self, w):
-        self.p.show_img(ImagerApp.IMG_NEXT)
+        self.p.show_img(self.IMG_NEXT)
 
     def prev_img(self, w):
-        self.p.show_img(ImagerApp.IMG_PREV)
+        self.p.show_img(self.IMG_PREV)
 
     def multi_reload(self, w):
         self.p.multi_reload()
@@ -353,6 +376,8 @@ class ImagerCmd(Gtk.MenuBar):
     def update_ui(self, param):
         for i in ("force_gray", "invert", "gamma_stretch", "scale"):
             self.w[i].set_active(param[f"display/{i}"])
+        for i in ("indi/keys"):
+            self.w[i].set_active(param[i])
         self.w[
             "histogram_stretch_percent_"
             f"{param['display/histogram_stretch_percent']}"].set_active(True)
@@ -382,3 +407,72 @@ class ImagerCmd(Gtk.MenuBar):
         else:
             self.p.param["cam/run"] = False
             self.p.cam.stop()
+
+    def show_indi(self, w):
+        if not self.p.indi:
+            self.p.indi = Indi(self.p)
+        self.p.indi.show_dialog()
+
+    def hook_keys(self):
+        self.p.connect("key_press_event", self.handle_key_press)
+        self.p.connect("key_release_event", self.handle_key_release)
+
+    def handle_key_press(self, w, ev):
+        if ev.state & Gdk.ModifierType.SHIFT_MASK:
+            if ev.keyval == Gdk.KEY_Home:
+                self.first_img(None)
+                return True
+            if ev.keyval == Gdk.KEY_End:
+                self.last_img(None)
+                return True
+            if ev.keyval == Gdk.KEY_Page_Up:
+                self.prev_img(None)
+                return True
+            if ev.keyval == Gdk.KEY_Page_Down:
+                self.next_img(None)
+                return True
+        if self.p.indi and self.p.param["indi/keys"]:
+            try:
+                val = self.KEY_MAP[ev.keyval]
+            except KeyError:
+                return False
+            self.p.indi.key_press(val)
+            return True
+
+    def handle_key_release(self, w, ev):
+        if self.p.indi and self.p.param["indi/keys"]:
+            try:
+                val = self.KEY_MAP[ev.keyval]
+            except KeyError:
+                return False
+            self.p.indi.key_release(val)
+            return True
+
+    def indi_keys(self, w):
+        self.p.set_param("indi/keys", w.get_active())
+
+    def help_keys(self, w):
+        dialog = Gtk.MessageDialog(
+            transient_for=self.p,
+            flags=0,
+            title="Keys",
+            message_type=Gtk.MessageType.INFO,
+            buttons=Gtk.ButtonsType.OK,
+            text=(
+                "Keys:\n\n"
+                "Shift+PgUp   Prev Image\n"
+                "Shift+PgDown Next Image\n"
+                "Shift+Home   First Image\n"
+                "Shift+End    Last Image\n"
+                "KP_1         Slow Slew\n"
+                "KP_3         Medium Slew\n"
+                "KP_5         Fast Slew\n"
+                "KP_9         Fastest Slew\n"
+                "KP_8, Up     Fastest N\n"
+                "KP_2, Down   Fastest S\n"
+                "KP_4, Left   Slew W\n"
+                "KP_6, Right  Slew E\n"
+            )
+        )
+        dialog.run()
+        dialog.destroy()
