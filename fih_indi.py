@@ -4,6 +4,7 @@ import time
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, GLib
 
+
 def format_degree(v: float) -> str:
     hh = int(v)
     res = v - hh
@@ -11,6 +12,7 @@ def format_degree(v: float) -> str:
     res -= mm / 60.0
     ss = int(res * 60.0 * 60.0)
     return f"{hh}:{mm:02d}:{ss:02d}"
+
 
 class IndiClient(PyIndi.BaseClient):
 
@@ -144,27 +146,15 @@ class IndiDialog(Gtk.Dialog):
         box = self.get_content_area()
         box.add(self.indi_grid)
         self.show_all()
-        GLib.timeout_add(1000, self.periodic)
 
     def connect_indi(self, w):
-        if self.main.busy:
-            return
-        self.main.busy = time.time()
-        self.main.errored = None
         self.parent.param["indi/hostname"] = self.hostname.get_text()
         try:
             self.parent.param["indi/port"] = int(self.port.get_text())
         except TypeError:
             self.parent.param["indi/port"] = 7624
         self.update_controls()
-        self.main.telescope = None
-        self.client.setServer(
-            self.parent.param["indi/hostname"],
-            self.parent.param["indi/port"])
-        if not self.client.connectServer():
-            self.main.errored = "Error connecting"
-            self.main.busy = None
-            return
+        self.main.do_connect()
 
     def on_destroy(self, w, d):
         self.hide()
@@ -178,25 +168,21 @@ class IndiDialog(Gtk.Dialog):
         self.match_telescope.set_text(
             self.parent.param["indi/match_telescope"])
 
-    def periodic(self):
-        if self.main.busy and time.time() < self.main.busy:
-            return True
-        self.main.busy = None
+    def update_ui(self):
         if self.main.errored:
             self.status.set_text(self.main.errored)
+            return
         if not self.main.connected:
             self.status.set_text("Not Connected")
-            return True
+            return
         if not self.main.telescope:
             self.status.set_text("No telescope found")
-            return True
         ra = format_degree(self.main.ra)
         dec = format_degree(self.main.dec)
         self.status.set_text(
             f"Found: {self.main.telescope}\n"
             f"RA={ra} "
             f"Dec={dec}")
-        return True
 
 
 class Indi:
@@ -212,6 +198,7 @@ class Indi:
         self.errored = None
         self.ra = 0
         self.dec = 0
+        GLib.timeout_add(1000, self.periodic)
 
     def show_dialog(self):
         if not self.controls_dialog:
@@ -269,3 +256,24 @@ class Indi:
             return None
         sw = self.telescope_obj.getSwitch(name)
         return sw
+
+    def do_connect(self):
+        if self.busy:
+            return
+        self.busy = time.time()
+        self.errored = None
+        self.telescope = None
+        self.client.setServer(
+            self.parent.param["indi/hostname"],
+            self.parent.param["indi/port"])
+        if not self.client.connectServer():
+            self.errored = "Error connecting"
+            self.busy = None
+
+    def periodic(self):
+        if self.busy and time.time() < self.busy + 1:
+            return True
+        self.busy = None
+        if self.controls_dialog:
+            self.controls_dialog.update_ui()
+        return True

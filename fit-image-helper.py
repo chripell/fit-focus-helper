@@ -22,6 +22,7 @@ from optparse import OptionParser
 from fih_image import Image
 from fih_cmd import ImagerCmd
 from fih_cam import Cam
+from fih_indi import Indi
 import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib
@@ -39,6 +40,9 @@ class ImagerApp(Gtk.Window):
                           help="Use config file")
         parser.add_option("--zwo_camera", type="string", default="",
                           help="Open the given number ZWO camera")
+        parser.add_option(
+            "--indi", type="string", default="",
+            help="[hostname] or [hostname:port] of the INDI server")
         (self.options, self.args) = parser.parse_args()
         self.img = None
         self.dire = None
@@ -92,6 +96,8 @@ class ImagerApp(Gtk.Window):
         elif self.options.zwo_camera != "":
             GLib.timeout_add(
                 500, self.open_cam, "zwo", self.options.zwo_camera)
+        elif self.options.indi != "":
+            GLib.timeout_add(500, self.do_indi, self.options.indi)
 
     def set_status(self, msg: str):
         self.status.remove_all(self.status_id)
@@ -303,6 +309,14 @@ class ImagerApp(Gtk.Window):
             self.cam.stop()
             self.cam.close()
             self.cam = None
+
+    def do_indi(self, addr: str):
+        addrs = addr.split(":")
+        self.indi = Indi(self)
+        self.param["indi/hostname"] = addrs[0]
+        if len(addrs) > 1:
+            self.param["indi/port"] = int(addrs[1])
+        self.indi.do_connect()
 
 
 if __name__ == "__main__":
